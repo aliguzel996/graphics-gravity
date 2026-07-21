@@ -8,6 +8,7 @@
   "scripts": {
     "dev": "vite",
     "build:web": "vite build && node scripts/fix-web-build.cjs",
+    "build:web:cpanel": "npm run build:web && node scripts/build-cpanel-flat.cjs",
     "preview": "vite preview",
     "start": "npm run build:web && electron .",
     "dist:win": "npm run build:web && electron-builder --win nsis portable"
