@@ -94,7 +94,7 @@ Graphics Gravity is a static web application and does not need a database or ser
 2. Upload the contents of `dist/` to the desired public directory.
 3. Keep `assets/`, `vendor/`, `graphics-gravity-icon.png` and `index.html` together.
 
-For cPanel, the prepared web ZIP can be extracted directly into the target directory. Make sure `vendor/matter.min.js` is present after extraction; it contains the local physics runtime.
+For cPanel, extract the prepared web ZIP directly into the target public directory, not into an additional nested folder. Keep the included `.htaccess`; it supplies safe JavaScript and CSS MIME mappings for Apache. Make sure `vendor/matter.min.js` is present after extraction because it contains the local physics runtime.
 
 ## Windows builds
 
