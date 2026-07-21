@@ -1,0 +1,14 @@
+{
+  "id": "graphics-gravity",
+  "name": "Graphics Gravity",
+  "version": "0.1.0",
+  "shortDescription": "Turn text, shapes, PNGs and SVGs into interactive 2D physics compositions.",
+  "category": "CreativeTool",
+  "creator": "Ali Guzel",
+  "publisher": "YCSWU",
+  "license": "Open source",
+  "website": "https://ycswu.co/graphics-gravity/",
+  "github": "https://github.com/aliguzel996/graphics-gravity",
+  "inputFormats": ["Text", "PNG", "SVG"],
+  "outputFormats": ["PNG", "JPG", "SVG", "WEBM", "PNG Sequence ZIP", "graphicsGravity Project"]
+}
