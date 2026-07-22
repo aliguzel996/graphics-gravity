@@ -104,8 +104,8 @@ For cPanel, run `npm run build:web:cpanel` and upload the contents of `dist-cpan
 
 Two Windows x64 packages are produced:
 
-- `graphics-gravity-setup-0.2.1-x64.exe` — standard installer with project-file association.
-- `graphics-gravity-portable-0.2.1-x64.exe` — runs without installation.
+- `graphics-gravity-setup-0.2.2-x64.exe` — standard installer with project-file association.
+- `graphics-gravity-portable-0.2.2-x64.exe` — runs without installation.
 
 Windows 10 or newer is recommended.
 

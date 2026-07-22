@@ -3,6 +3,7 @@ const { contextBridge, ipcRenderer } = require('electron');
 contextBridge.exposeInMainWorld('graphicsGravityFile', {
   save: content => ipcRenderer.invoke('project:save', content),
   open: () => ipcRenderer.invoke('project:open'),
+  saveExport: (bytes, name, mimeType) => ipcRenderer.invoke('export:save', { bytes, name, mimeType }),
   onLoad: callback => {
     const listener = (_event, payload) => callback(payload);
     ipcRenderer.on('project:load', listener);

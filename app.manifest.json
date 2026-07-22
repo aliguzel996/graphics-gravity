@@ -1,7 +1,7 @@
 {
   "id": "graphics-gravity",
   "name": "Graphics Gravity",
-  "version": "0.2.1",
+  "version": "0.2.2",
   "shortDescription": "Turn text, shapes, PNGs and SVGs into interactive 2D physics compositions.",
   "category": "CreativeTool",
   "creator": "Ali Guzel",

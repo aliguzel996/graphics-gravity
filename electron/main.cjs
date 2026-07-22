@@ -61,6 +61,49 @@ ipcMain.handle('project:open', async () => {
   return { canceled: false, name: path.basename(currentProjectPath), content: await fs.readFile(currentProjectPath, 'utf8') };
 });
 
+const exportTypes = {
+  png: { name: 'PNG Image', extensions: ['png'] },
+  jpg: { name: 'JPEG Image', extensions: ['jpg', 'jpeg'] },
+  jpeg: { name: 'JPEG Image', extensions: ['jpg', 'jpeg'] },
+  svg: { name: 'SVG Image', extensions: ['svg'] },
+  webm: { name: 'WebM Video', extensions: ['webm'] },
+  zip: { name: 'ZIP Archive', extensions: ['zip'] }
+};
+
+ipcMain.handle('export:save', async (event, payload = {}) => {
+  const suggestedName = path.basename(typeof payload.name === 'string' && payload.name.trim() ? payload.name : 'graphics-gravity-export');
+  const extension = path.extname(suggestedName).slice(1).toLowerCase();
+  const bytes = payload.bytes;
+  const data = Buffer.isBuffer(bytes)
+    ? bytes
+    : bytes instanceof ArrayBuffer
+      ? Buffer.from(bytes)
+      : ArrayBuffer.isView(bytes)
+        ? Buffer.from(bytes.buffer, bytes.byteOffset, bytes.byteLength)
+        : null;
+  if (!data) throw new TypeError('Export data is invalid.');
+
+  const owner = BrowserWindow.fromWebContents(event.sender) || mainWindow;
+  const result = await dialog.showSaveDialog(owner, {
+    defaultPath: path.join(app.getPath('downloads'), suggestedName),
+    filters: exportTypes[extension] ? [exportTypes[extension]] : undefined
+  });
+  if (result.canceled || !result.filePath) return { canceled: true };
+
+  try {
+    await fs.writeFile(result.filePath, data);
+    return { canceled: false, name: path.basename(result.filePath), path: result.filePath, size: data.byteLength };
+  } catch (error) {
+    await dialog.showMessageBox(owner, {
+      type: 'error',
+      title: 'Graphics Gravity',
+      message: 'The export could not be saved.',
+      detail: error.message
+    });
+    return { canceled: true, error: error.message };
+  }
+});
+
 app.whenReady().then(() => {
   mainWindow = new BrowserWindow({
     width: 1440,
