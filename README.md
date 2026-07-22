@@ -26,6 +26,8 @@ The same tool runs in a modern web browser and as a Windows desktop application.
 ### Inputs
 
 - Add unrestricted text, circles, squares, triangles and stars.
+- Choose Space Mono, Helvetica/Arial or an italic script font for text inputs.
+- Import custom TTF, OTF, WOFF and WOFF2 fonts; custom fonts remain embedded in saved projects and SVG exports.
 - Import PNG and SVG artwork.
 - Transparent image regions are excluded from the physical silhouette instead of behaving like a solid rectangular image box.
 - Reorder the input queue by dragging its cards.
@@ -64,13 +66,15 @@ The same tool runs in a modern web browser and as a Windows desktop application.
 
 - Color and alpha controls for the preview, container, text, text background, text border and vector inputs.
 - Per-input vector color and transparency.
-- Optional vector outline with independent color, alpha and thickness.
+- Independent optional outlines for shape/SVG inputs and text, each with its own color, alpha and thickness.
 - Adjustable text background, border thickness and corner radius.
 - A 100% corner radius turns a single-character text piece into a true circle.
-- Optional fine preview grid for checking transparent areas.
+- Optional fine preview grid for checking transparent areas. It starts hidden and fills the complete preview surface when enabled.
 
 ### Preview and export
 
+- Collapsible sidebar sections keep the canvas clear; all sections start closed.
+- The empty opening container displays a one-time interaction hint that disappears on the first drop.
 - Vector-sharp preview zoom from 50% to 300% with the mouse wheel.
 - Free, `1920 × 1920` and vertical `1080 × 1920` output frames.
 - Exports use the exact frame and zoom currently visible in the preview.
@@ -100,8 +104,8 @@ For cPanel, run `npm run build:web:cpanel` and upload the contents of `dist-cpan
 
 Two Windows x64 packages are produced:
 
-- `graphics-gravity-setup-0.1.0-x64.exe` — standard installer with project-file association.
-- `graphics-gravity-portable-0.1.0-x64.exe` — runs without installation.
+- `graphics-gravity-setup-0.2.0-x64.exe` — standard installer with project-file association.
+- `graphics-gravity-portable-0.2.0-x64.exe` — runs without installation.
 
 Windows 10 or newer is recommended.
 
