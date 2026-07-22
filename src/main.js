@@ -1,11 +1,12 @@
 import './style.css';
+import { parse as parseOpenType } from './vendor/opentype.min.mjs';
 
 const { Engine, Render, Runner, Bodies, Body, Composite, Events, Mouse, MouseConstraint, Vector } = Matter;
 
 document.querySelector('#app').innerHTML = `
 <div class="app">
   <header>
-    <div class="brand">GRAPHICS GRAVITY <small>YCSWU / 0.2</small></div>
+    <div class="brand">GRAPHICS GRAVITY <small>YCSWU / 0.2.1</small></div>
     <div class="head-actions"><button id="openProjectBtn">open</button><button id="saveProjectBtn">save</button><button id="pauseBtn">pause</button><button id="clearBtn">clear</button><input id="projectFileInput" type="file" accept=".graphicsGravity,.graphicsgravity,application/json" hidden></div>
   </header>
   <main>
@@ -88,13 +89,13 @@ document.querySelector('#app').innerHTML = `
         <div class="control"><div class="control-head"><span>bounciness</span><output id="bounceOut">0.55</output></div><input id="bounce" type="range" min="0" max="100" value="55"></div>
         <div class="control"><div class="control-head"><span>friction</span><output id="frictionOut">0.12</output></div><input id="friction" type="range" min="0" max="100" value="12"><div class="control-note">surface grip — low slides, high settles</div></div>
         <div class="control"><div class="control-head"><span>mutual attraction</span><output id="attractOut">0.00</output></div><input id="attraction" type="range" min="0" max="100" value="0"><div class="control-note">pieces pull toward each other like magnets</div></div>
-        <label class="check"><input id="overflowBehind" type="checkbox" checked> layer overflow behind</label>
+        <label class="check"><input id="overflowBehind" type="checkbox"> layer overflow behind</label>
         <div class="control-note">the front layer fills first; the back layer has its own physics, and excess pieces are discarded</div>
         </div>
       </details>
       <div class="sidebar-note quiet">INPUTS DROP LEFT TO RIGHT. DRAG INPUT CARDS TO REORDER THE QUEUE. CLICK A CARD TO MAKE IT NEXT.</div>
     </aside>
-    <div class="stage-wrap"><div class="stage frame-free" id="stage"><div class="stage-tools stage-tools-left"><button id="recBtn">REC</button><span id="recTime">00:00</span></div><div class="stage-tools stage-tools-center"><button class="active" data-frame="free">FREE</button><button data-frame="square">1:1</button><button data-frame="vertical">9:16</button></div><div class="stage-tools stage-tools-right"><button id="svgBtn">EXPORT SVG</button><button id="jpgBtn">EXPORT JPG</button><button id="pngBtn">EXPORT PNG</button></div><div class="frame-resolution" id="frameResolution"></div><div class="empty-hint" id="emptyHint">tap or hold click</div><div class="draw-note">click points around the desired boundary, then close shape</div><div class="status"><span id="bodyStatus">0 bodies</span><span id="fpsStatus">60 fps</span></div><div class="zoom-level" id="zoomLevel">ZOOM 100%</div></div></div>
+    <div class="stage-wrap"><div class="stage frame-free" id="stage"><canvas class="surface-layer" id="surfaceLayer"></canvas><div class="stage-tools stage-tools-left"><button id="recBtn">REC</button><span id="recTime">00:00</span></div><div class="stage-tools stage-tools-center"><button class="active" data-frame="free">FREE</button><button data-frame="square">1:1</button><button data-frame="vertical">9:16</button></div><div class="stage-tools stage-tools-right"><button id="svgBtn">EXPORT SVG</button><button id="jpgBtn">EXPORT JPG</button><button id="pngBtn">EXPORT PNG</button></div><div class="frame-resolution" id="frameResolution"></div><div class="empty-hint" id="emptyHint">tap or hold click</div><div class="draw-note">click points around the desired boundary, then close shape</div><div class="status"><span id="bodyStatus">0 bodies</span><span id="fpsStatus">60 fps</span></div><div class="zoom-level" id="zoomLevel">ZOOM 100%</div></div></div>
   </main>
   <dialog id="recordSaveDialog" class="record-dialog">
     <form method="dialog">
@@ -128,15 +129,21 @@ function installHexColorFields(){document.querySelectorAll('input[type="color"]:
 installHexColorFields();
 
 const BUILTIN_FONTS=[
-  {id:'italic-script',label:'Italic Script',family:'"Brush Script MT", "Segoe Script", cursive',style:'italic'},
-  {id:'helvetica-arial',label:'Helvetica / Arial',family:'Helvetica, Arial, sans-serif',style:'normal'},
-  {id:'space-mono',label:'Space Mono',family:'"Space Mono", monospace',style:'normal'},
+  {id:'italic-script',label:'Italic Script',family:'"Graphics Gravity Script", cursive',style:'normal',source:'./graphics-gravity-script.ttf'},
+  {id:'helvetica-arial',label:'Helvetica / Arial',family:'"Graphics Gravity Sans", Arial, sans-serif',style:'normal',source:'./graphics-gravity-sans.ttf'},
+  {id:'space-mono',label:'Space Mono',family:'"Graphics Gravity Mono", monospace',style:'normal',source:'./graphics-gravity-space-mono.ttf'},
 ];
 const customFonts=[];
+const outlineFonts=new Map();
 let selectedFontId='space-mono';
 const textMeasureCanvas=document.createElement('canvas'),textMeasureContext=textMeasureCanvas.getContext('2d');
 function fontRecord(id){return customFonts.find(font=>font.id===id)||BUILTIN_FONTS.find(font=>font.id===id)||BUILTIN_FONTS[2];}
 function fontCss(size,id){const font=fontRecord(id);return`${font.style||'normal'} 400 ${size}px ${font.family}`;}
+async function outlineFont(id){
+  const font=fontRecord(id),cacheKey=font.id;if(outlineFonts.has(cacheKey))return outlineFonts.get(cacheKey);
+  const promise=(async()=>{const source=font.dataUrl||font.source;if(!source)throw new Error('font outline data is unavailable');const response=await fetch(new URL(source,document.baseURI));if(!response.ok)throw new Error(`font outline load failed: ${response.status}`);return parseOpenType(await response.arrayBuffer());})();
+  outlineFonts.set(cacheKey,promise);try{return await promise;}catch(error){outlineFonts.delete(cacheKey);throw error;}
+}
 function textOpticalOffset(fontSize){return fontSize*.045;}
 function textGeometry(text,size,fontId){const fontSize=size*.75;textMeasureContext.font=fontCss(fontSize,fontId);const measured=textMeasureContext.measureText(text).width,h=size*1.25,w=text.length===1?h:Math.max(size,measured+size*.65);return{fontSize,w,h};}
 function renderFontOptions(){
@@ -152,9 +159,11 @@ renderFontOptions();
 
 const stage = document.querySelector('#stage');
 const stageWrap = document.querySelector('.stage-wrap');
-function syncPreviewGrid(){const visible=!!document.querySelector('#previewGrid')?.checked;stage.classList.toggle('grid-visible',visible);stageWrap.classList.toggle('grid-visible',visible);}
+const surfaceLayer = document.querySelector('#surfaceLayer');
+function syncPreviewGrid(){const visible=!!document.querySelector('#previewGrid')?.checked;stage.classList.toggle('grid-visible',visible);stageWrap.classList.toggle('grid-visible',visible);drawPreviewSurface();}
 const engine = Engine.create({ gravity: { x: 0, y: 1, scale: 0.001 }, positionIterations: 12, velocityIterations: 10, constraintIterations: 4 });
 const render = Render.create({ element: stage, engine, options: { wireframes: false, background: 'transparent', pixelRatio: 1 } });
+render.canvas.classList.add('matter-canvas');
 const runner = Runner.create();
 const framePresets = { square:{width:1920,height:1920,label:'1920 × 1920'}, vertical:{width:1080,height:1920,label:'1080 × 1920'} };
 const CAT_CONTAINER=0x0001,CAT_PIECE=0x0002,CAT_OVERFLOW=0x0004,FRONT_LAYER_FILL_RATIO=.88;
@@ -169,6 +178,30 @@ function rgbaColor(color,opacity=100){const hex=normalizedHexColor(color)||'#111
 const paintValue=(colorSelector,fallback)=>rgbaColor(colorValue(colorSelector,fallback),opacityValue(colorSelector));
 function flattenedColor(color,opacity=100){const hex=normalizedHexColor(color)||'#ffffff',alpha=clampOpacity(opacity)/100,channel=start=>Math.round(parseInt(hex.slice(start,start+2),16)*alpha+255*(1-alpha));return`rgb(${channel(1)},${channel(3)},${channel(5)})`;}
 
+function transformedContainerPoints(targetWidth,targetHeight,zoom=previewZoom){
+  const centerX=targetWidth/2,centerY=targetHeight/2;
+  return containerPolygon.map(point=>{
+    const x=point[0]*targetWidth/W,y=point[1]*targetHeight/H;
+    return[centerX+(x-centerX)*zoom,centerY+(y-centerY)*zoom];
+  });
+}
+function tracePolygon(c,points){c.beginPath();points.forEach((point,index)=>index?c.lineTo(point[0],point[1]):c.moveTo(point[0],point[1]));c.closePath();}
+function surfaceGridStep(width,height){return Math.max(8,Math.round(Math.min(width,height)/120));}
+function drawSurfaceGrid(c,width,height){const step=surfaceGridStep(width,height);c.strokeStyle='rgba(17,17,17,.11)';c.lineWidth=Math.max(.5,Math.min(width,height)/1920);c.beginPath();for(let x=0;x<=width;x+=step){c.moveTo(x,0);c.lineTo(x,height);}for(let y=0;y<=height;y+=step){c.moveTo(0,y);c.lineTo(width,y);}c.stroke();}
+function drawOutsideSurface(c,width,height,points){
+  c.clearRect(0,0,width,height);c.save();
+  if(!drawing&&points.length>2){c.beginPath();c.rect(0,0,width,height);points.forEach((point,index)=>index?c.lineTo(point[0],point[1]):c.moveTo(point[0],point[1]));c.closePath();c.clip('evenodd');}
+  c.fillStyle=paintValue('#outsideColor','#d4d4d0');c.fillRect(0,0,width,height);
+  if(document.querySelector('#previewGrid')?.checked)drawSurfaceGrid(c,width,height);
+  c.restore();
+}
+function syncPreviewSurfaceCss(){stageWrap.style.backgroundColor=paintValue('#outsideColor','#d4d4d0');}
+function drawPreviewSurface(){
+  if(!surfaceLayer)return;const width=Math.max(1,stage.clientWidth),height=Math.max(1,stage.clientHeight),ratio=Math.max(1,Math.min(2,window.devicePixelRatio||1)),pixelWidth=Math.round(width*ratio),pixelHeight=Math.round(height*ratio);
+  if(surfaceLayer.width!==pixelWidth||surfaceLayer.height!==pixelHeight){surfaceLayer.width=pixelWidth;surfaceLayer.height=pixelHeight;}
+  const c=surfaceLayer.getContext('2d');c.setTransform(ratio,0,0,ratio,0,0);drawOutsideSurface(c,width,height,transformedContainerPoints(width,height));syncPreviewSurfaceCss();
+}
+
 function resize() {
   const r=stageWrap.getBoundingClientRect(),availableW=Math.max(200,r.width-28),availableH=Math.max(200,r.height-28),frame=framePresets[frameMode];let displayW,displayH;if(frame){const fit=Math.min(availableW/frame.width,availableH/frame.height);displayW=Math.floor(frame.width*fit);displayH=Math.floor(frame.height*fit);W=frame.width;H=frame.height;}else{displayW=Math.floor(availableW);displayH=Math.floor(availableH);W=displayW;H=displayH;}
   previewDisplayW=displayW;previewDisplayH=displayH;
@@ -178,6 +211,7 @@ function resize() {
   render.options.width = W; render.options.height = H; render.bounds.max.x = W; render.bounds.max.y = H;
   updatePreviewResolution();
   rebuildContainer();
+  drawPreviewSurface();
 }
 new ResizeObserver(resize).observe(stageWrap);
 
@@ -345,7 +379,6 @@ window.addEventListener('pointerup',stopDropping);window.addEventListener('point
 
 function drawCustomGuide(){ const c=render.context;c.save();c.setTransform(render.options.pixelRatio,0,0,render.options.pixelRatio,0,0);c.strokeStyle='#00b7ff';c.fillStyle='#00b7ff';c.lineWidth=2;c.setLineDash([6,4]);c.beginPath();customPoints.forEach((p,i)=>i?c.lineTo(...p):c.moveTo(...p));c.stroke();customPoints.forEach(p=>{c.beginPath();c.arc(p[0],p[1],4,0,Math.PI*2);c.fill();});c.restore(); }
 function traceContainerPath(c){c.beginPath();containerPolygon.forEach((p,i)=>i?c.lineTo(p[0],p[1]):c.moveTo(p[0],p[1]));c.closePath();}
-function drawPreviewMatte(c){const step=Math.max(7,Math.round(Math.min(W,H)/72));c.save();c.globalCompositeOperation='destination-over';if(!drawing&&containerPolygon.length>2){c.beginPath();c.rect(0,0,W,H);containerPolygon.forEach((p,i)=>i?c.lineTo(p[0],p[1]):c.moveTo(p[0],p[1]));c.closePath();c.clip('evenodd');}if(document.querySelector('#previewGrid')?.checked){c.strokeStyle='rgba(17,17,17,.10)';c.lineWidth=.45;c.beginPath();for(let x=0;x<=W;x+=step){c.moveTo(x,0);c.lineTo(x,H);}for(let y=0;y<=H;y+=step){c.moveTo(0,y);c.lineTo(W,y);}c.stroke();}c.fillStyle=paintValue('#outsideColor','#d4d4d0');c.fillRect(0,0,W,H);c.restore();}
 function traceRoundedRect(c,x,y,w,h,r){const radius=Math.max(0,Math.min(r,w/2,h/2));c.beginPath();c.moveTo(x+radius,y);c.lineTo(x+w-radius,y);c.quadraticCurveTo(x+w,y,x+w,y+radius);c.lineTo(x+w,y+h-radius);c.quadraticCurveTo(x+w,y+h,x+w-radius,y+h);c.lineTo(x+radius,y+h);c.quadraticCurveTo(x,y+h,x,y+h-radius);c.lineTo(x,y+radius);c.quadraticCurveTo(x,y,x+radius,y);c.closePath();}
 function traceTextBackground(c,w,h,text,radiusValue){
   const value=Math.max(0,Math.min(100,radiusValue));
@@ -362,7 +395,7 @@ Events.on(render,'beforeRender',()=>{const c=render.context;c.save();c.setTransf
 Events.on(render,'afterRender',()=>{
   const c=render.context, pr=render.options.pixelRatio;c.save();c.setTransform(pr,0,0,pr,0,0);
   Composite.allBodies(engine.world).forEach(b=>{if(b.plugin?.drawImage){c.save();c.globalAlpha=1;c.translate(b.position.x,b.position.y);c.rotate(b.angle);c.drawImage(b.plugin.drawImage,b.plugin.drawImageOffset.x-b.plugin.drawImageWidth/2,b.plugin.drawImageOffset.y-b.plugin.drawImageHeight/2,b.plugin.drawImageWidth,b.plugin.drawImageHeight);c.restore();}if(b.plugin?.drawText){const w=b.plugin.textWidth,h=b.plugin.textHeight,radiusValue=+document.querySelector('#textRadius').value,sourceItem=library.find(item=>item.id===b.plugin.inputId),textPaint=itemEffectivePaint(sourceItem),borderWidth=+document.querySelector('#textBorderThickness').value,textStroke=textVectorStrokeAppearance(),textY=textOpticalOffset(b.plugin.fontSize);c.save();c.globalAlpha=1;c.translate(b.position.x,b.position.y);c.rotate(b.angle);traceTextBackground(c,w,h,b.plugin.drawText,radiusValue);c.fillStyle=paintValue('#textBackgroundColor','#ffffff');c.fill();if(borderWidth>0){c.strokeStyle=paintValue('#textBorderColor','#111111');c.lineWidth=borderWidth;c.stroke();}c.fillStyle=textPaint;c.textAlign='center';c.textBaseline='middle';c.font=fontCss(b.plugin.fontSize,b.plugin.fontId);if(textStroke.enabled){c.strokeStyle=textStroke.paint;c.lineWidth=textStroke.thickness;c.lineJoin='round';c.miterLimit=2;c.strokeText(b.plugin.drawText,0,textY);}c.fillText(b.plugin.drawText,0,textY);c.restore();}});
-  c.restore();if(renderClipActive){c.save();c.setTransform(pr,0,0,pr,0,0);c.globalCompositeOperation='destination-over';traceContainerPath(c);c.fillStyle=paintValue('#containerColor','#ffffff');c.fill();c.restore();c.restore();renderClipActive=false;}c.save();c.setTransform(pr,0,0,pr,0,0);drawPreviewMatte(c);c.restore();c.save();c.setTransform(pr,0,0,pr,0,0);if(!drawing&&document.querySelector('#showBoundary').checked&&containerPolygon.length>2){traceContainerPath(c);c.strokeStyle='#111';c.lineWidth=+document.querySelector('#outlineThickness').value;c.lineJoin='round';c.stroke();}c.restore();if(drawing)drawCustomGuide();
+  c.restore();if(renderClipActive){c.save();c.setTransform(pr,0,0,pr,0,0);c.globalCompositeOperation='destination-over';traceContainerPath(c);c.fillStyle=paintValue('#containerColor','#ffffff');c.fill();c.restore();c.restore();renderClipActive=false;}c.save();c.setTransform(pr,0,0,pr,0,0);if(!drawing&&document.querySelector('#showBoundary').checked&&containerPolygon.length>2){traceContainerPath(c);c.strokeStyle='#111';c.lineWidth=+document.querySelector('#outlineThickness').value;c.lineJoin='round';c.stroke();}c.restore();if(drawing)drawCustomGuide();drawPreviewSurface();
   if(recordCanvas&&recordContext)drawVisibleRenderToCanvas(recordContext,recordCanvas);
 });
 
@@ -382,9 +415,9 @@ const mouse=Mouse.create(render.canvas), mouseConstraint=MouseConstraint.create(
 Composite.add(engine.world,mouseConstraint); render.mouse=mouse;
 function setPreviewPixelRatio(value){const next=Math.max(1,Math.min(3,value)),targetW=Math.round(W*next),targetH=Math.round(H*next);if(Math.abs(previewPixelRatio-next)<.001&&render.canvas.width===targetW&&render.canvas.height===targetH)return;Render.setPixelRatio(render,next);render.canvas.style.width=`${previewDisplayW}px`;render.canvas.style.height=`${previewDisplayH}px`;previewPixelRatio=next;}
 function updatePreviewResolution(){const required=Math.max(1,previewZoom*previewDisplayW/W,previewZoom*previewDisplayH/H);setPreviewPixelRatio(required);}
-function setPreviewZoom(value){previewZoom=Math.max(.5,Math.min(3,value));render.canvas.style.transform=`scale(${previewZoom})`;Mouse.setScale(mouse,{x:1/previewZoom,y:1/previewZoom});document.querySelector('#zoomLevel').textContent=`ZOOM ${Math.round(previewZoom*100)}%`;updatePreviewResolution();}
+function setPreviewZoom(value){previewZoom=Math.max(.5,Math.min(3,value));render.canvas.style.transform=`scale(${previewZoom})`;Mouse.setScale(mouse,{x:1/previewZoom,y:1/previewZoom});document.querySelector('#zoomLevel').textContent=`ZOOM ${Math.round(previewZoom*100)}%`;updatePreviewResolution();drawPreviewSurface();}
 function visiblePreviewRect(){const zoom=Math.max(1,previewZoom),width=W/zoom,height=H/zoom;return{x:(W-width)/2,y:(H-height)/2,width,height,zoom};}
-function drawVisibleRenderToCanvas(context,canvas){const view=visiblePreviewRect(),scaleX=render.canvas.width/W,scaleY=render.canvas.height/H;context.clearRect(0,0,canvas.width,canvas.height);context.drawImage(render.canvas,view.x*scaleX,view.y*scaleY,view.width*scaleX,view.height*scaleY,0,0,canvas.width,canvas.height);}
+function drawVisibleRenderToCanvas(context,canvas){composeVisibleScene(context,canvas.width,canvas.height);}
 stage.addEventListener('wheel',event=>{if(event.target.closest('.stage-tools'))return;event.preventDefault();setPreviewZoom(previewZoom*Math.exp(-event.deltaY*.0012));},{passive:false});
 
 document.querySelector('#addText').onclick=()=>{const v=document.querySelector('#textInput').value.trim();if(v)addLibrary({kind:'text',value:v,preview:v,fontId:selectedFontId,color:colorValue('#textColor','#111111')});};
@@ -407,7 +440,7 @@ function savedBody(body){
 function projectSnapshot(){return{format:PROJECT_FORMAT,version:PROJECT_VERSION,savedAt:new Date().toISOString(),canvas:{width:W,height:H},frameMode,paused,textInput:document.querySelector('#textInput').value,fonts:savedFonts(),settings:savedSettings(),container:{type:containerType,angle:containerAngle,customPoints:customPoints.map(point=>[...point]),drawing},library:savedLibrary(),queueIndex,selectedInputId,itemId,bodies:engine.world.bodies.filter(body=>body.label==='piece').map(savedBody)};}
 function loadProjectImage(src){return new Promise((resolve,reject)=>{const image=new Image();image.onload=()=>resolve(image);image.onerror=()=>reject(new Error('project image could not be loaded'));image.src=src;});}
 async function hydratedLibrary(items,settings={}){return Promise.all((items||[]).map(async item=>{const vector=itemIsVector(item),copy={...item};if(copy.kind==='text'&&!copy.fontId)copy.fontId='space-mono';if(vector){copy.color=normalizedHexColor(copy.color)||normalizedHexColor(copy.kind==='text'?settings.textColor:settings.vectorColor)||'#111111';copy.opacity=Number.isFinite(+copy.opacity)?clampOpacity(copy.opacity):clampOpacity(copy.kind==='text'?settings.textOpacity:settings.vectorOpacity);}if(copy.kind!=='image')return copy;const stroke=vectorStrokeAppearance(settings),src=copy.svgSource?svgDataUrl(colorizedSvgSource(copy.svgSource,copy.color,copy.opacity,stroke)):copy.src,image=await loadProjectImage(src);let alphaRects=copy.alphaRects;if(copy.svgSource&&!alphaRects?.length){const physicsSrc=svgDataUrl(colorizedSvgSource(copy.svgSource,copy.color,100,{...stroke,opacity:100})),physicsImage=await loadProjectImage(physicsSrc);alphaRects=extractAlphaRects(physicsImage);}return{...copy,src,image,width:copy.width||image.naturalWidth,height:copy.height||image.naturalHeight,alphaRects:alphaRects?.length?alphaRects:extractAlphaRects(image)};}));}
-async function restoreFontState(state={}){customFonts.splice(0,customFonts.length);for(const record of state.custom||[]){try{await addCustomFontRecord(record);}catch(error){console.warn('Saved custom font could not be restored',error);}}selectedFontId=[...BUILTIN_FONTS,...customFonts].some(font=>font.id===state.selectedId)?state.selectedId:'space-mono';renderFontOptions();}
+async function restoreFontState(state={}){customFonts.splice(0,customFonts.length);outlineFonts.clear();for(const record of state.custom||[]){try{await addCustomFontRecord(record);}catch(error){console.warn('Saved custom font could not be restored',error);}}selectedFontId=[...BUILTIN_FONTS,...customFonts].some(font=>font.id===state.selectedId)?state.selectedId:'space-mono';renderFontOptions();}
 function restoreControlOutputs(){
   const value=id=>+document.querySelector(`#${id}`).value,text=(id,content)=>document.querySelector(`#${id}`).textContent=content;
   text('globalSizeOut',`${value('globalPieceSize')}%`);text('randomMinOut',`${value('randomMin')}%`);text('randomMaxOut',`${value('randomMax')}%`);text('sizeOut',`${value('containerSize')}%`);text('sidesOut',String(value('containerSides')));text('rectLongOut',`${value('rectLongSide')}%`);text('rectShortOut',`${value('rectShortSide')}%`);text('thicknessOut',`${value('outlineThickness')} px`);text('vectorStrokeOut',`${value('vectorStrokeThickness')} px`);text('textVectorStrokeOut',`${value('textVectorStrokeThickness')} px`);text('textBorderOut',`${value('textBorderThickness')} px`);text('textRadiusOut',`${value('textRadius')}%`);text('holdDropOut',`${value('holdDropRate')} / sec`);text('rotationOut',`${value('rotationSpeed')} deg/s`);text('gravityOut',(value('gravity')/100).toFixed(2));text('bounceOut',(value('bounce')/100).toFixed(2));text('frictionOut',(value('friction')/100).toFixed(2));text('attractOut',(value('attraction')/100).toFixed(2));
@@ -502,7 +535,7 @@ function clearPreview(){stopDropping();Composite.allBodies(engine.world).filter(
 function seedDefaultLibrary(){library.splice(0,library.length);itemId=0;queueIndex=0;selectedInputId=null;addLibrary({kind:'text',value:'G',preview:'G'});addLibrary({kind:'shape',shape:'circle',preview:'○'});addLibrary({kind:'shape',shape:'square',preview:'□'});}
 function resetAllSettings(){
   clearPreview();projectSettingIds.forEach(id=>{const el=document.querySelector(`#${id}`);if(el.type==='checkbox')el.checked=el.defaultChecked;else el.value=el.defaultValue;});document.querySelector('#textInput').value=document.querySelector('#textInput').defaultValue;document.querySelector('#fileInput').value='';document.querySelector('.appearance-panel').open=false;
-  customFonts.splice(0,customFonts.length);selectedFontId='space-mono';renderFontOptions();document.querySelector('#fontPanel').open=false;document.querySelectorAll('aside > .sidebar-panel').forEach(panel=>panel.open=false);drawing=false;customPoints=[];containerType='circle';containerAngle=0;stage.classList.remove('drawing');document.querySelector('#drawActions').classList.remove('visible');selectContainerButton('circle');syncRectangleControls();document.querySelector('#containerLabel').textContent='circle';restoreControlOutputs();restoreFrame('free');setPreviewZoom(1);seedDefaultLibrary();webProjectHandle=null;
+  customFonts.splice(0,customFonts.length);outlineFonts.clear();selectedFontId='space-mono';renderFontOptions();document.querySelector('#fontPanel').open=false;document.querySelectorAll('aside > .sidebar-panel').forEach(panel=>panel.open=false);drawing=false;customPoints=[];containerType='circle';containerAngle=0;stage.classList.remove('drawing');document.querySelector('#drawActions').classList.remove('visible');selectContainerButton('circle');syncRectangleControls();document.querySelector('#containerLabel').textContent='circle';restoreControlOutputs();restoreFrame('free');setPreviewZoom(1);seedDefaultLibrary();webProjectHandle=null;
   if(paused){paused=false;Runner.run(runner,engine);}document.querySelector('#pauseBtn').textContent='pause';
 }
 const clearDialog=document.querySelector('#clearDialog');
@@ -511,9 +544,13 @@ document.querySelector('#clearPreviewBtn').onclick=()=>{clearPreview();clearDial
 document.querySelector('#clearAllBtn').onclick=()=>{resetAllSettings();clearDialog.close();};
 document.querySelector('#pauseBtn').onclick=e=>{paused=!paused;e.target.textContent=paused?'play':'pause';paused?Runner.stop(runner):Runner.run(runner,engine);};
 function downloadBlob(blob,name){const a=document.createElement('a'),url=URL.createObjectURL(blob);a.download=name;a.href=url;a.click();setTimeout(()=>URL.revokeObjectURL(url),1200);}
-function renderSceneExportCanvas(){Render.world(render);const output=document.createElement('canvas'),view=visiblePreviewRect();output.width=W;output.height=H;const context=output.getContext('2d');context.clearRect(0,0,W,H);if(!drawing&&containerPolygon.length>2){context.save();context.setTransform(view.zoom,0,0,view.zoom,-view.x*view.zoom,-view.y*view.zoom);traceContainerPath(context);context.clip();context.drawImage(render.canvas,0,0,W,H);context.restore();if(document.querySelector('#showBoundary').checked){context.save();context.setTransform(view.zoom,0,0,view.zoom,-view.x*view.zoom,-view.y*view.zoom);traceContainerPath(context);context.strokeStyle='#111111';context.lineWidth=+document.querySelector('#outlineThickness').value;context.lineJoin='round';context.stroke();context.restore();}}return output;}
+function composeVisibleScene(context,targetWidth,targetHeight){
+  context.save();context.setTransform(1,0,0,1,0,0);context.clearRect(0,0,targetWidth,targetHeight);drawOutsideSurface(context,targetWidth,targetHeight,transformedContainerPoints(targetWidth,targetHeight));
+  context.translate(targetWidth/2,targetHeight/2);context.scale(previewZoom,previewZoom);context.translate(-targetWidth/2,-targetHeight/2);context.drawImage(render.canvas,0,0,render.canvas.width,render.canvas.height,0,0,targetWidth,targetHeight);context.restore();
+}
+function renderSceneExportCanvas(){const output=document.createElement('canvas');output.width=W;output.height=H;composeVisibleScene(output.getContext('2d'),W,H);return output;}
 function exportPng(){renderSceneExportCanvas().toBlob(blob=>blob&&downloadBlob(blob,'graphics-gravity.png'),'image/png');}
-function exportJpg(){const scene=renderSceneExportCanvas(),output=document.createElement('canvas');output.width=W;output.height=H;const context=output.getContext('2d');context.fillStyle=flattenedColor(colorValue('#outsideColor','#d4d4d0'),opacityValue('#outsideColor'));context.fillRect(0,0,W,H);context.drawImage(scene,0,0);output.toBlob(blob=>blob&&downloadBlob(blob,'graphics-gravity.jpg'),'image/jpeg',.94);}
+function exportJpg(){const scene=renderSceneExportCanvas(),output=document.createElement('canvas');output.width=W;output.height=H;const context=output.getContext('2d');context.fillStyle='#ffffff';context.fillRect(0,0,W,H);context.drawImage(scene,0,0);output.toBlob(blob=>blob&&downloadBlob(blob,'graphics-gravity.jpg'),'image/jpeg',.94);}
 document.querySelector('#pngBtn').onclick=exportPng;
 document.querySelector('#jpgBtn').onclick=exportJpg;
 const svgNumber=value=>Number(value.toFixed(3));
@@ -527,18 +564,31 @@ function svgTextBackground(body){
   if(text.length===1&&value>=FULL_TEXT_RADIUS_START){const r=Math.min(w,h)/2;if(value>=100)return`<circle cx="0" cy="0" r="${svgNumber(r)}" ${fill}${stroke}/>`;const t=(value-FULL_TEXT_RADIUS_START)/(100-FULL_TEXT_RADIUS_START),k=(2/3)+(.5522847498307936-(2/3))*t,kr=svgNumber(k*r),rr=svgNumber(r);return`<path d="M 0 ${-rr} C ${kr} ${-rr} ${rr} ${-kr} ${rr} 0 C ${rr} ${kr} ${kr} ${rr} 0 ${rr} C ${-kr} ${rr} ${-rr} ${kr} ${-rr} 0 C ${-rr} ${-kr} ${-kr} ${-rr} 0 ${-rr} Z" ${fill}${stroke}/>`;}
   const radius=svgNumber(textCornerRadius(w,h,value));return`<rect x="${svgNumber(-w/2)}" y="${svgNumber(-h/2)}" width="${svgNumber(w)}" height="${svgNumber(h)}" rx="${radius}" ${fill}${stroke}/>`;
 }
-function svgPiece(body){
-  if(body.plugin?.drawText){const angle=svgNumber(body.angle*180/Math.PI),text=svgEscape(body.plugin.drawText),fontSize=svgNumber(body.plugin.fontSize),font=fontRecord(body.plugin.fontId),textY=svgNumber(textOpticalOffset(body.plugin.fontSize)),item=library.find(entry=>entry.id===body.plugin.inputId),fill=svgFillAttributes(itemEffectiveColor(item),itemEffectiveOpacity(item)),stroke=svgTextVectorStrokeAttributes();return`<g transform="translate(${svgNumber(body.position.x)} ${svgNumber(body.position.y)}) rotate(${angle})">${svgTextBackground(body)}<text x="0" y="${textY}" text-anchor="middle" dominant-baseline="central" font-family="${svgEscape(font.family)}" font-style="${svgEscape(font.style||'normal')}" font-size="${fontSize}" font-weight="400" ${fill}${stroke}>${text}</text></g>`;}
+async function svgTextShape(body,fill,stroke){
+  const text=body.plugin.drawText,fontSize=body.plugin.fontSize,font=fontRecord(body.plugin.fontId),textY=textOpticalOffset(fontSize);
+  try{
+    const parsed=await outlineFont(body.plugin.fontId),advance=parsed.getAdvanceWidth(text,fontSize,{kerning:true}),baseline=textY+(parsed.ascender+parsed.descender)*fontSize/(2*parsed.unitsPerEm),path=parsed.getPath(text,-advance/2,baseline,fontSize,{kerning:true}),data=path.toPathData({decimalPlaces:3,optimize:true,flipY:false});
+    return`<path d="${svgEscape(data)}" ${fill}${stroke} fill-rule="nonzero"/>`;
+  }catch(error){
+    console.warn(`Text outline fallback for ${font.label}`,error);return`<text x="0" y="${svgNumber(textY)}" text-anchor="middle" dominant-baseline="central" font-family="${svgEscape(font.family)}" font-style="${svgEscape(font.style||'normal')}" font-size="${svgNumber(fontSize)}" font-weight="400" ${fill}${stroke}>${svgEscape(text)}</text>`;
+  }
+}
+async function svgPiece(body){
+  if(body.plugin?.drawText){const angle=svgNumber(body.angle*180/Math.PI),item=library.find(entry=>entry.id===body.plugin.inputId),fill=svgFillAttributes(itemEffectiveColor(item),itemEffectiveOpacity(item)),stroke=svgTextVectorStrokeAttributes(),shape=await svgTextShape(body,fill,stroke);return`<g transform="translate(${svgNumber(body.position.x)} ${svgNumber(body.position.y)}) rotate(${angle})">${svgTextBackground(body)}${shape}</g>`;}
   if(body.plugin?.drawImage){const src=body.plugin.drawImageSrc||body.plugin.drawImage?.src;if(!src)return'';const angle=svgNumber(body.angle*180/Math.PI),x=svgNumber(body.plugin.drawImageOffset.x-body.plugin.drawImageWidth/2),y=svgNumber(body.plugin.drawImageOffset.y-body.plugin.drawImageHeight/2);return`<g transform="translate(${svgNumber(body.position.x)} ${svgNumber(body.position.y)}) rotate(${angle})"><image href="${svgEscape(src)}" x="${x}" y="${y}" width="${svgNumber(body.plugin.drawImageWidth)}" height="${svgNumber(body.plugin.drawImageHeight)}" preserveAspectRatio="none"/></g>`;}
   const item=library.find(entry=>entry.id===body.plugin?.inputId),fill=svgFillAttributes(itemEffectiveColor(item),itemEffectiveOpacity(item)),stroke=svgVectorStrokeAttributes();if(body.circleRadius)return`<circle cx="${svgNumber(body.position.x)}" cy="${svgNumber(body.position.y)}" r="${svgNumber(body.circleRadius)}" ${fill}${stroke}/>`;const parts=body.parts?.length>1?body.parts.slice(1):[body];return parts.map(part=>`<polygon points="${part.vertices.map(v=>`${svgNumber(v.x)},${svgNumber(v.y)}`).join(' ')}" ${fill}${stroke}/>`).join('');
 }
-function exportSvg(){
-  const view=visiblePreviewRect(),hasContainer=!drawing&&containerPolygon.length>2,points=containerPolygon.map(p=>`${svgNumber(p[0])},${svgNumber(p[1])}`).join(' '),container=svgFillAttributes(colorValue('#containerColor','#ffffff'),opacityValue('#containerColor')),pieces=engine.world.bodies.filter(body=>body.label==='piece').map(svgPiece).join(''),clip=hasContainer?' clip-path="url(#containerClip)"':'',outline=hasContainer&&document.querySelector('#showBoundary').checked?`<polygon points="${points}" fill="none" stroke="#111111" stroke-width="${svgNumber(+document.querySelector('#outlineThickness').value)}" stroke-linejoin="round"/>`:'';
-  const fontStyles=svgEmbeddedFontStyles(),defsContent=`${hasContainer?`<clipPath id="containerClip"><polygon points="${points}"/></clipPath>`:''}${fontStyles?`<style>${fontStyles}</style>`:''}`,defs=defsContent?`<defs>${defsContent}</defs>`:'',containerFill=hasContainer?`<polygon points="${points}" ${container}/>`:'';
-  const svg=`<?xml version="1.0" encoding="UTF-8"?>\n<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" viewBox="${svgNumber(view.x)} ${svgNumber(view.y)} ${svgNumber(view.width)} ${svgNumber(view.height)}">${defs}${containerFill}<g${clip}>${pieces}</g>${outline}</svg>`;
-  downloadBlob(new Blob([svg],{type:'image/svg+xml;charset=utf-8'}),'graphics-gravity.svg');
+function svgPolygonPath(points){return points.length?`M ${points.map(point=>`${svgNumber(point[0])} ${svgNumber(point[1])}`).join(' L ')} Z`:'';}
+async function exportSvg(){
+  const button=document.querySelector('#svgBtn'),original=button.textContent;button.textContent='OUTLINING...';button.disabled=true;
+  try{
+    const hasContainer=!drawing&&containerPolygon.length>2,points=containerPolygon.map(p=>`${svgNumber(p[0])},${svgNumber(p[1])}`).join(' '),surfacePoints=transformedContainerPoints(W,H),surfacePath=`M 0 0 H ${W} V ${H} H 0 Z${hasContainer?` ${svgPolygonPath(surfacePoints)}`:''}`,container=svgFillAttributes(colorValue('#containerColor','#ffffff'),opacityValue('#containerColor')),pieces=(await Promise.all(engine.world.bodies.filter(body=>body.label==='piece').map(svgPiece))).join(''),clip=hasContainer?' clip-path="url(#containerClip)"':'',outline=hasContainer&&document.querySelector('#showBoundary').checked?`<polygon points="${points}" fill="none" stroke="#111111" stroke-width="${svgNumber(+document.querySelector('#outlineThickness').value)}" stroke-linejoin="round"/>`:'';
+    const fontStyles=svgEmbeddedFontStyles(),gridStep=surfaceGridStep(W,H),gridPattern=document.querySelector('#previewGrid')?.checked?`<pattern id="surfaceGrid" width="${gridStep}" height="${gridStep}" patternUnits="userSpaceOnUse"><path d="M ${gridStep} 0 H 0 V ${gridStep}" fill="none" stroke="#111111" stroke-opacity=".11" stroke-width="${svgNumber(Math.max(.5,Math.min(W,H)/1920))}"/></pattern>`:'',defsContent=`${hasContainer?`<clipPath id="containerClip"><polygon points="${points}"/></clipPath>`:''}${gridPattern}${fontStyles?`<style>${fontStyles}</style>`:''}`,defs=defsContent?`<defs>${defsContent}</defs>`:'',surface=`<path d="${surfacePath}" fill-rule="evenodd" ${svgFillAttributes(colorValue('#outsideColor','#d4d4d0'),opacityValue('#outsideColor'))}/>${gridPattern?`<path d="${surfacePath}" fill-rule="evenodd" fill="url(#surfaceGrid)"/>`:''}`,containerFill=hasContainer?`<polygon points="${points}" ${container}/>`:'',sceneTransform=`translate(${svgNumber(W/2)} ${svgNumber(H/2)}) scale(${svgNumber(previewZoom)}) translate(${svgNumber(-W/2)} ${svgNumber(-H/2)})`;
+    const svg=`<?xml version="1.0" encoding="UTF-8"?>\n<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}">${defs}${surface}<g transform="${sceneTransform}">${containerFill}<g${clip}>${pieces}</g>${outline}</g></svg>`;
+    downloadBlob(new Blob([svg],{type:'image/svg+xml;charset=utf-8'}),'graphics-gravity.svg');
+  }finally{button.textContent=original;button.disabled=false;}
 }
-document.querySelector('#svgBtn').onclick=exportSvg;
+document.querySelector('#svgBtn').onclick=()=>exportSvg().catch(error=>{console.error('SVG export failed',error);});
 const crcTable=(()=>{const table=new Uint32Array(256);for(let n=0;n<256;n++){let c=n;for(let k=0;k<8;k++)c=(c&1)?0xedb88320^(c>>>1):c>>>1;table[n]=c>>>0;}return table;})();
 function crc32(data){let crc=0xffffffff;for(const byte of data)crc=crcTable[(crc^byte)&255]^(crc>>>8);return(crc^0xffffffff)>>>0;}
 function storedZip(files){const encoder=new TextEncoder(),localParts=[],centralParts=[];let offset=0,centralSize=0;for(const file of files){const name=encoder.encode(file.name),data=file.data instanceof Uint8Array?file.data:new Uint8Array(file.data),crc=crc32(data),local=new Uint8Array(30+name.length),lv=new DataView(local.buffer);lv.setUint32(0,0x04034b50,true);lv.setUint16(4,20,true);lv.setUint16(8,0,true);lv.setUint32(14,crc,true);lv.setUint32(18,data.length,true);lv.setUint32(22,data.length,true);lv.setUint16(26,name.length,true);local.set(name,30);localParts.push(local,data);const central=new Uint8Array(46+name.length),cv=new DataView(central.buffer);cv.setUint32(0,0x02014b50,true);cv.setUint16(4,20,true);cv.setUint16(6,20,true);cv.setUint16(10,0,true);cv.setUint32(16,crc,true);cv.setUint32(20,data.length,true);cv.setUint32(24,data.length,true);cv.setUint16(28,name.length,true);cv.setUint32(42,offset,true);central.set(name,46);centralParts.push(central);centralSize+=central.length;offset+=local.length+data.length;}const end=new Uint8Array(22),ev=new DataView(end.buffer);ev.setUint32(0,0x06054b50,true);ev.setUint16(8,files.length,true);ev.setUint16(10,files.length,true);ev.setUint32(12,centralSize,true);ev.setUint32(16,offset,true);return new Blob([...localParts,...centralParts,end],{type:'application/zip'});}
